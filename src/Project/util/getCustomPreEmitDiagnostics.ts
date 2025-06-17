@@ -1,4 +1,5 @@
 import { fileUsesCommentDirectives } from "Project/preEmitDiagnostics/fileUsesCommentDirectives";
+import { errors } from "Shared/diagnostics";
 import { ProjectData } from "Shared/types";
 import ts from "typescript";
 
@@ -10,5 +11,9 @@ export function getCustomPreEmitDiagnostics(data: ProjectData, sourceFile: ts.So
 	for (const check of PRE_EMIT_DIAGNOSTICS) {
 		diagnostics.push(...check(data, sourceFile));
 	}
+	diagnostics.push(errors.noCommentDirectives({
+						sourceFile,
+						range: 0,
+					}));
 	return diagnostics;
 }
