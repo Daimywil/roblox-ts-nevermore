@@ -43,6 +43,32 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 
 	const statements = luau.list.make<luau.Statement>();
 
+	const path = node.moduleSpecifier;
+	const splitPath = path.getText().split("/").map(part => part.replace(/['"]/g, ""));
+
+	const importClauseNamedBindings = importClause?.namedBindings;
+
+	if (splitPath.includes("@quenty") && importClauseNamedBindings !== undefined && !ts.isNamespaceImport(importClauseNamedBindings)) {
+		const elements = importClauseNamedBindings.elements;
+		for (const element of elements) {
+			const importName = element.name.getText();
+			const symbol = getOriginalSymbolOfNode(state.typeChecker, element.name);
+			if (!symbol || !isSymbolOfValue(symbol))
+				continue;
+			luau.list.push(
+				statements,
+				luau.create(luau.SyntaxKind.VariableDeclaration, {
+					left: luau.id(importName),
+					right: luau.create(luau.SyntaxKind.CallExpression, {
+						expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+						args: luau.list.make(luau.create(luau.SyntaxKind.StringLiteral, { value: importName })),
+					}),
+				}),
+			);
+		}
+		return statements;
+	}
+
 	assert(ts.isStringLiteral(node.moduleSpecifier));
 	const importExp = new Lazy<luau.IndexableExpression>(() =>
 		createImportExpression(state, node.getSourceFile(), node.moduleSpecifier),

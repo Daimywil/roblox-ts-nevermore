@@ -156,16 +156,16 @@ function getProjectImportParts(
 	}
 
 	if (state.projectType === ProjectType.Game) {
-		if (
-			// in the case of `import("")`, don't do network type check
-			// as the call may be guarded by runtime RunService checks
-			!ts.isImportCall(moduleSpecifier.parent) &&
-			state.rojoResolver.getNetworkType(moduleRbxPath) === NetworkType.Server &&
-			state.rojoResolver.getNetworkType(sourceRbxPath) !== NetworkType.Server
-		) {
-			DiagnosticService.addDiagnostic(errors.noServerImport(moduleSpecifier));
-			return [luau.none()];
-		}
+		// if (
+		// 	// in the case of `import("")`, don't do network type check
+		// 	// as the call may be guarded by runtime RunService checks
+		// 	!ts.isImportCall(moduleSpecifier.parent) &&
+		// 	state.rojoResolver.getNetworkType(moduleRbxPath) === NetworkType.Server &&
+		// 	state.rojoResolver.getNetworkType(sourceRbxPath) !== NetworkType.Server
+		// ) {
+		// 	DiagnosticService.addDiagnostic(errors.noServerImport(moduleSpecifier));
+		// 	return [luau.none()];
+		// }
 
 		const fileRelation = state.rojoResolver.getFileRelation(sourceRbxPath, moduleRbxPath);
 		if (fileRelation === FileRelation.OutToOut || fileRelation === FileRelation.InToOut) {
@@ -215,6 +215,9 @@ export function createImportExpression(
 	moduleSpecifier: ts.Expression,
 ): luau.IndexableExpression {
 	const parts = getImportParts(state, sourceFile, moduleSpecifier);
-	parts.unshift(luau.globals.script);
-	return luau.call(state.TS(moduleSpecifier.parent, "import"), parts);
+
+	return luau.call(
+		luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+		[parts[parts.length - 1]],
+	)
 }

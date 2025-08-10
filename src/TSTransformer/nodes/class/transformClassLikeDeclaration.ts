@@ -380,5 +380,18 @@ export function transformClassLikeDeclaration(state: TransformState, node: ts.Cl
 		}),
 	);
 
+	if (node.name && ts.isIdentifier(node.name) && node.name.text.includes("Service")) {
+		luau.list.push(
+			statements,
+			luau.create(luau.SyntaxKind.CallStatement, {
+				expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+					expression: returnVar,
+					name: "constructor",
+					args: luau.list.make(),
+				}),
+			}),
+		);
+	}
+
 	return { statements, name: returnVar };
 }

@@ -1,5 +1,7 @@
 import luau from "@roblox-ts/luau-ast";
+import { Expression } from "@roblox-ts/luau-ast/out/LuauAST/bundle";
 import { RbxType } from "@roblox-ts/rojo-resolver";
+import path from "path";
 import { COMPILER_VERSION } from "Shared/constants";
 import { assert } from "Shared/util/assert";
 import { TransformState } from "TSTransformer";
@@ -129,6 +131,20 @@ function handleExports(
 		}
 	}
 
+	if (sourceFile.fileName.includes("Service")) {
+		const classDeclaration = sourceFile.statements.find(
+			statement => ts.isClassDeclaration(statement) && !!statement.name,
+		) as ts.ClassDeclaration | undefined;
+		if (classDeclaration && classDeclaration.name) {
+			luau.list.push(
+				statements,
+				luau.create(luau.SyntaxKind.ReturnStatement, {
+					expression: luau.id(classDeclaration.name.text),
+				}),
+			);
+			return;
+		}
+	}
 	if (state.hasExportEquals) {
 		// local exports variable is created in transformExportAssignment
 		const finalStatement = sourceFile.statements[sourceFile.statements.length - 1];
@@ -207,6 +223,142 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 
 	// transform the `ts.Statements` of the source file into a `list.list<...>`
 	const statements = transformStatementList(state, node, node.statements, undefined);
+
+	const filePath = node?.getSourceFile().fileName;
+
+	if (filePath) {
+		const fileName = path.basename(filePath).split(".")[0];
+
+		const isServer = filePath.includes("server");
+		console.log(`Transforming ${fileName} (${isServer ? "server" : "client"})`);
+
+		if (fileName === "main") {
+
+			if (isServer) {
+				const serverScriptService = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+					expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+						name: "GetService",
+						expression: luau.create(luau.SyntaxKind.Identifier, { name: "game" }),
+						args: luau.list.make(
+							luau.create(luau.SyntaxKind.StringLiteral, { value: "ServerScriptService" })
+						),
+					}),
+					name: "NevermoreModules",
+				});
+
+				const loaderUtilsParent = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+					expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+						expression: luau.create(luau.SyntaxKind.Identifier, { name: "game" }),
+						name: "FindFirstChild",
+						args: luau.list.make<Expression>(
+							luau.create(luau.SyntaxKind.StringLiteral, { value: "LoaderUtils" }),
+							luau.create(luau.SyntaxKind.TrueLiteral, {}),
+						),
+					}),
+					name: "Parent",
+				});
+
+				luau.list.unshiftList(
+					statements,
+					luau.list.make(
+						luau.create(luau.SyntaxKind.VariableDeclaration, {
+							left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+							right: luau.create(luau.SyntaxKind.CallExpression, {
+								expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.ParenthesizedExpression, {
+										expression: luau.create(luau.SyntaxKind.CallExpression, {
+											expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+											args: luau.list.make(loaderUtilsParent),
+										}),
+									}),
+									name: "bootstrapGame",
+								}),
+								args: luau.list.make(serverScriptService),
+							}),
+						}),
+					)
+				);
+			}
+			else {
+				luau.list.unshiftList(
+					statements,
+					luau.list.make(
+						luau.create(luau.SyntaxKind.VariableDeclaration, {
+							left: luau.create(luau.SyntaxKind.Identifier, { name: "loader" }),
+							right: luau.create(luau.SyntaxKind.MethodCallExpression, {
+								expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+									expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+										expression: luau.create(luau.SyntaxKind.Identifier, { name: "game" }),
+										name: "GetService",
+										args: luau.list.make(
+											luau.create(luau.SyntaxKind.StringLiteral, { value: "ReplicatedStorage" })
+										),
+									}),
+									name: "WaitForChild",
+									args: luau.list.make(
+										luau.create(luau.SyntaxKind.StringLiteral, { value: "Modules" })
+									),
+								}),
+								name: "WaitForChild",
+								args: luau.list.make(
+									luau.create(luau.SyntaxKind.StringLiteral, { value: "loader" })
+								),
+							}),
+						}),
+						luau.create(luau.SyntaxKind.VariableDeclaration, {
+							left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+							right: luau.create(luau.SyntaxKind.CallExpression, {
+								expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.CallExpression, {
+										expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+										args: luau.list.make(luau.create(luau.SyntaxKind.Identifier, { name: "loader" })),
+									}),
+									name: "bootstrapGame",
+								}),
+								args: luau.list.make(luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, { name: "loader" }),
+									name: "Parent",
+								})),
+							}),
+						}),
+					)
+				);
+			}
+		} else {
+			luau.list.unshiftList(
+				statements,
+				luau.list.make(
+					luau.create(luau.SyntaxKind.VariableDeclaration, {
+						left: luau.create(luau.SyntaxKind.Identifier, {
+							name: "require",
+						}),
+						right: luau.create(luau.SyntaxKind.CallExpression, {
+							expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+								expression: luau.create(luau.SyntaxKind.CallExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, {
+										name: "require",
+									}),
+									args: luau.list.make<luau.Expression>(
+										luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+											expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+												expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+												name: "Parent",
+											}),
+											name: "loader",
+										})
+									),
+								}),
+								name: "load",
+							}),
+							args: luau.list.make<luau.Expression>(
+								luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+							),
+						}),
+					}),
+				)
+			);
+		}
+	}
 
 	handleExports(state, node, symbol, statements);
 
