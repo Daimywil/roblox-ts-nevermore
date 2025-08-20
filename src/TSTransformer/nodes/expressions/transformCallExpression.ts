@@ -174,6 +174,35 @@ export function transformPropertyCallExpressionInner(
 		]);
 	}
 
+	if (name === "Pipe") {
+		// map varargs to table array
+		// expression.expression does not exist
+		const [ops, prereqs] = state.capture(() => ensureTransformOrder(state, nodeArguments));
+		if (!luau.list.isEmpty(prereqs) && expressionMightMutate(state, baseExpression, expression.expression)) {
+			baseExpression = state.pushToVar(baseExpression);
+		}
+		state.prereqList(prereqs);
+
+		const arrayLiteral = luau.create(luau.SyntaxKind.Array, {
+			members: luau.list.make(...ops),
+		});
+
+		let exp: luau.Expression;
+		if (luau.isValidIdentifier(name)) {
+			exp = luau.create(luau.SyntaxKind.MethodCallExpression, {
+				name,
+				expression: convertToIndexableExpression(baseExpression),
+				args: luau.list.make(arrayLiteral),
+			});
+		} else {
+			exp = luau.call(luau.property(convertToIndexableExpression(baseExpression), name), [
+				arrayLiteral,
+			]);
+		}
+
+		return wrapReturnIfLuaTuple(state, node, exp);
+	}
+
 	const expType = state.typeChecker.getNonOptionalType(state.getType(node.expression));
 	const symbol = getFirstDefinedSymbol(state, expType);
 	if (symbol) {

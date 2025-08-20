@@ -224,6 +224,27 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 	// transform the `ts.Statements` of the source file into a `list.list<...>`
 	const statements = transformStatementList(state, node, node.statements, undefined);
 
+	handleExports(state, node, symbol, statements);
+
+	// moduleScripts must `return nil` if they do not export any values
+	const lastStatement = getLastNonCommentStatement(statements.tail);
+	if (!lastStatement || !luau.isReturnStatement(lastStatement.value)) {
+		const outputPath = state.pathTranslator.getOutputPath(node.fileName);
+		if (state.rojoResolver.getRbxTypeFromFilePath(outputPath) === RbxType.ModuleScript) {
+			luau.list.push(statements, luau.create(luau.SyntaxKind.ReturnStatement, { expression: luau.nil() }));
+		}
+	}
+
+	const headerStatements = luau.list.make<luau.Statement>();
+
+	// add build information to the tree
+	luau.list.push(headerStatements, luau.comment(` Compiled with roblox-ts v${COMPILER_VERSION}`));
+
+	// add the Runtime library to the tree if it is used
+	if (state.usesRuntimeLib) {
+		luau.list.push(headerStatements, state.createRuntimeLibImport(node));
+	}
+
 	const filePath = node?.getSourceFile().fileName;
 
 	if (filePath) {
@@ -233,7 +254,6 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 		console.log(`Transforming ${fileName} (${isServer ? "server" : "client"})`);
 
 		if (fileName === "main") {
-
 			if (isServer) {
 				const serverScriptService = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
 					expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
@@ -258,30 +278,28 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 					name: "Parent",
 				});
 
-				luau.list.unshiftList(
-					statements,
-					luau.list.make(
-						luau.create(luau.SyntaxKind.VariableDeclaration, {
-							left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
-							right: luau.create(luau.SyntaxKind.CallExpression, {
-								expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
-									expression: luau.create(luau.SyntaxKind.ParenthesizedExpression, {
-										expression: luau.create(luau.SyntaxKind.CallExpression, {
-											expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
-											args: luau.list.make(loaderUtilsParent),
-										}),
+				luau.list.push(
+					headerStatements,
+					luau.create(luau.SyntaxKind.VariableDeclaration, {
+						left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+						right: luau.create(luau.SyntaxKind.CallExpression, {
+							expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+								expression: luau.create(luau.SyntaxKind.ParenthesizedExpression, {
+									expression: luau.create(luau.SyntaxKind.CallExpression, {
+										expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+										args: luau.list.make(loaderUtilsParent),
 									}),
-									name: "bootstrapGame",
 								}),
-								args: luau.list.make(serverScriptService),
+								name: "bootstrapGame",
 							}),
+							args: luau.list.make(serverScriptService),
 						}),
-					)
+					}),
 				);
 			}
 			else {
-				luau.list.unshiftList(
-					statements,
+				luau.list.pushList(
+					headerStatements,
 					luau.list.make(
 						luau.create(luau.SyntaxKind.VariableDeclaration, {
 							left: luau.create(luau.SyntaxKind.Identifier, { name: "loader" }),
@@ -325,8 +343,8 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 				);
 			}
 		} else {
-			luau.list.unshiftList(
-				statements,
+			luau.list.pushList(
+				headerStatements,
 				luau.list.make(
 					luau.create(luau.SyntaxKind.VariableDeclaration, {
 						left: luau.create(luau.SyntaxKind.Identifier, {
@@ -360,36 +378,37 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 		}
 	}
 
-	handleExports(state, node, symbol, statements);
-
-	// moduleScripts must `return nil` if they do not export any values
-	const lastStatement = getLastNonCommentStatement(statements.tail);
-	if (!lastStatement || !luau.isReturnStatement(lastStatement.value)) {
-		const outputPath = state.pathTranslator.getOutputPath(node.fileName);
-		if (state.rojoResolver.getRbxTypeFromFilePath(outputPath) === RbxType.ModuleScript) {
-			luau.list.push(statements, luau.create(luau.SyntaxKind.ReturnStatement, { expression: luau.nil() }));
-		}
+	// add the ServiceBag import to the tree
+	if (state.usesServiceBag) {
+		luau.list.push(
+            headerStatements,
+            luau.create(luau.SyntaxKind.VariableDeclaration, {
+                left: luau.create(luau.SyntaxKind.Identifier, { name: "SERVICE_BAG" }),
+                right: luau.create(luau.SyntaxKind.CallExpression, {
+                    expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+                        expression: luau.create(luau.SyntaxKind.CallExpression, {
+                            expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+                            args: luau.list.make(
+                                luau.create(luau.SyntaxKind.StringLiteral, { value: "TheServiceBag" }),
+                            ),
+                        }),
+                        name: "Get",
+                    }),
+                    args: luau.list.make(),
+                }),
+            }),
+        );
 	}
 
-	const headerStatements = luau.list.make<luau.Statement>();
-
-	// add build information to the tree
-	luau.list.push(headerStatements, luau.comment(` Compiled with roblox-ts v${COMPILER_VERSION}`));
-
-	// add the Runtime library to the tree if it is used
-	if (state.usesRuntimeLib) {
-		luau.list.push(headerStatements, state.createRuntimeLibImport(node));
-	}
-
-	// extract Luau directive comments like --!strict so we can put them before headerStatements
+	// extract Luau directive comments like --!strict so we can put them before headerheaderStatements
 	const directiveComments = luau.list.make<luau.Statement>();
-	while (statements.head && luau.isComment(statements.head.value) && statements.head.value.text.startsWith("!")) {
-		// safety: statements.head is checked in while condition
-		luau.list.push(directiveComments, luau.list.shift(statements)!);
+	while (headerStatements.head && luau.isComment(headerStatements.head.value) && headerStatements.head.value.text.startsWith("!")) {
+		// safety: headerStatements.head is checked in while condition
+		luau.list.push(directiveComments, luau.list.shift(headerStatements)!);
 	}
 
+	luau.list.unshiftList(headerStatements, directiveComments);
 	luau.list.unshiftList(statements, headerStatements);
-	luau.list.unshiftList(statements, directiveComments);
 
 	return statements;
 }
