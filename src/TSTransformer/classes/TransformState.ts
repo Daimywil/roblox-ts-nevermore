@@ -196,8 +196,6 @@ export class TransformState {
 		return luau.property(luau.globals.TS, name);
 	}
 
-	public usesServiceBag = true;
-
 	/**
 	 * Returns a `luau.VariableDeclaration` for RuntimeLib.lua
 	 */
