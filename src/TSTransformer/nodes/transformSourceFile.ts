@@ -131,20 +131,20 @@ function handleExports(
 		}
 	}
 
-	if (sourceFile.fileName.includes("Service")) {
-		const classDeclaration = sourceFile.statements.find(
-			statement => ts.isClassDeclaration(statement) && !!statement.name,
-		) as ts.ClassDeclaration | undefined;
-		if (classDeclaration && classDeclaration.name) {
-			luau.list.push(
-				statements,
-				luau.create(luau.SyntaxKind.ReturnStatement, {
-					expression: luau.id(classDeclaration.name.text),
-				}),
-			);
-			return;
-		}
-	}
+	// if (sourceFile.fileName.includes("Service")) {
+	// 	const classDeclaration = sourceFile.statements.find(
+	// 		statement => ts.isClassDeclaration(statement) && !!statement.name,
+	// 	) as ts.ClassDeclaration | undefined;
+	// 	if (classDeclaration && classDeclaration.name) {
+	// 		luau.list.push(
+	// 			statements,
+	// 			luau.create(luau.SyntaxKind.ReturnStatement, {
+	// 				expression: luau.id(classDeclaration.name.text),
+	// 			}),
+	// 		);
+	// 		return;
+	// 	}
+	// }
 	if (state.hasExportEquals) {
 		// local exports variable is created in transformExportAssignment
 		const finalStatement = sourceFile.statements[sourceFile.statements.length - 1];
@@ -314,7 +314,7 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 									}),
 									name: "WaitForChild",
 									args: luau.list.make(
-										luau.create(luau.SyntaxKind.StringLiteral, { value: "Modules" })
+										luau.create(luau.SyntaxKind.StringLiteral, { value: "NevermoreModules" })
 									),
 								}),
 								name: "WaitForChild",

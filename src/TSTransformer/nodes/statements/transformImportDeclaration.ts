@@ -48,7 +48,7 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 
 	const importClauseNamedBindings = importClause?.namedBindings;
 
-	if (splitPath.includes("@quenty") && importClauseNamedBindings !== undefined && !ts.isNamespaceImport(importClauseNamedBindings)) {
+	if ((splitPath.includes("@quenty") || splitPath.includes("@daimywil")) && importClauseNamedBindings !== undefined && !ts.isNamespaceImport(importClauseNamedBindings)) {
 		const elements = importClauseNamedBindings.elements;
 		for (const element of elements) {
 			const importName = element.name.getText();

@@ -380,15 +380,24 @@ export function transformClassLikeDeclaration(state: TransformState, node: ts.Cl
 		}),
 	);
 
-	if (node.name && ts.isIdentifier(node.name) && node.name.text.includes("Service")) {
+	if (node.name && ts.isIdentifier(node.name) && node.name.text.includes("Service") && !node.name.text.startsWith("Base")) {
+		// luau.list.push(
+		// 	statements,
+		// 	luau.create(luau.SyntaxKind.CallStatement, {
+		// 		expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+		// 			expression: returnVar,
+		// 			name: "constructor",
+		// 			args: luau.list.make(),
+		// 		}),
+		// 	}),
+		// );
+		// ServiceName = ServiceName.new()
 		luau.list.push(
 			statements,
-			luau.create(luau.SyntaxKind.CallStatement, {
-				expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
-					expression: returnVar,
-					name: "constructor",
-					args: luau.list.make(),
-				}),
+			luau.create(luau.SyntaxKind.Assignment, {
+				left: returnVar,
+				operator: "=",
+				right: luau.call(luau.property(returnVar, "new"), []),
 			}),
 		);
 	}
