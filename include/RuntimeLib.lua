@@ -1,6 +1,10 @@
 local Promise = require(script.Parent.Promise)
 
+local require = require(script.Parent.loader).load(script)
+
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local OUTPUT_PREFIX = "roblox-ts: "
 local NODE_MODULES = "node_modules"
@@ -49,8 +53,22 @@ local currentlyLoading = {}
 local registeredLibraries = {}
 
 function TS.import(context, module, ...)
+	if module == ServerScriptService and RunService:IsClient() then
+		module = ReplicatedStorage
+	end
 	for i = 1, select("#", ...) do
-		module = module:WaitForChild((select(i, ...)))
+		local previousModule = module
+		module = module:FindFirstChild((select(i, ...)))
+		if not module then
+			error(
+				OUTPUT_PREFIX
+					.. "Failed to import! Could not find submodule "
+					.. (select(i, ...))
+					.. " in "
+					.. previousModule:GetFullName(),
+				2
+			)
+		end
 	end
 
 	if module.ClassName ~= "ModuleScript" then

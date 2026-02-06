@@ -1,9 +1,9 @@
 import luau, { render, RenderState, renderStatements, solveTempIds } from "@roblox-ts/luau-ast";
 import { PathTranslator } from "@roblox-ts/path-translator";
-import { RbxPath, RbxPathParent, RojoResolver } from "@roblox-ts/rojo-resolver";
+import { RbxPath, RojoResolver } from "@roblox-ts/rojo-resolver";
 import path from "path";
-import { PARENT_FIELD, ProjectType } from "Shared/constants";
-import { errors, warnings } from "Shared/diagnostics";
+import { ProjectType } from "Shared/constants";
+import { warnings } from "Shared/diagnostics";
 import { ProjectData } from "Shared/types";
 import { assert } from "Shared/util/assert";
 import { getCanonicalFileName } from "Shared/util/getCanonicalFileName";
@@ -11,8 +11,6 @@ import { getOrSetDefault } from "Shared/util/getOrSetDefault";
 import { MultiTransformState } from "TSTransformer";
 import { DiagnosticService } from "TSTransformer/classes/DiagnosticService";
 import { TransformServices, TryUses } from "TSTransformer/types";
-import { createGetService } from "TSTransformer/util/createGetService";
-import { propertyAccessExpressionChain } from "TSTransformer/util/expressionChain";
 import { getModuleAncestor, skipUpwards } from "TSTransformer/util/traversal";
 import { valueToIdStr } from "TSTransformer/util/valueToIdStr";
 import ts from "typescript";
@@ -196,72 +194,85 @@ export class TransformState {
 		return luau.property(luau.globals.TS, name);
 	}
 
+	public usesServiceBag = true;
+
 	/**
 	 * Returns a `luau.VariableDeclaration` for RuntimeLib.lua
 	 */
 	public createRuntimeLibImport(sourceFile: ts.SourceFile) {
-		// if the transform state has the game path to the RuntimeLib.lua
-		if (this.runtimeLibRbxPath) {
-			if (this.projectType === ProjectType.Game) {
-				// create an expression to obtain the service where RuntimeLib is stored
-				const serviceName = this.runtimeLibRbxPath[0];
-				assert(serviceName);
-
-				let expression: luau.IndexableExpression = createGetService(serviceName);
-				// iterate through the rest of the path
-				// for each instance in the path, create a new WaitForChild call to be added on to the end of the final expression
-				for (let i = 1; i < this.runtimeLibRbxPath.length; i++) {
-					expression = luau.create(luau.SyntaxKind.MethodCallExpression, {
-						expression,
-						name: "WaitForChild",
-						args: luau.list.make(luau.string(this.runtimeLibRbxPath[i])),
-					});
-				}
-
-				// nest the chain of `WaitForChild`s inside a require call
-				expression = luau.call(luau.globals.require, [expression]);
-
-				// create a variable declaration for this call
-				return luau.create(luau.SyntaxKind.VariableDeclaration, {
-					left: luau.globals.TS,
-					right: expression,
-				});
-			} else {
-				const sourceOutPath = this.pathTranslator.getOutputPath(sourceFile.fileName);
-				const rbxPath = this.rojoResolver.getRbxPathFromFilePath(sourceOutPath);
-				if (!rbxPath) {
-					DiagnosticService.addDiagnostic(
-						errors.noRojoData(sourceFile, path.relative(this.data.projectPath, sourceOutPath), false),
-					);
-					return luau.create(luau.SyntaxKind.VariableDeclaration, {
-						left: luau.globals.TS,
-						right: luau.none(),
-					});
-				}
-
-				return luau.create(luau.SyntaxKind.VariableDeclaration, {
-					left: luau.globals.TS,
-					right: luau.call(luau.globals.require, [
-						propertyAccessExpressionChain(
-							luau.globals.script,
-							RojoResolver.relative(rbxPath, this.runtimeLibRbxPath).map(v =>
-								v === RbxPathParent ? PARENT_FIELD : v,
-							),
-						),
-					]),
-				});
-			}
-		} else {
-			// we pass RuntimeLib access to packages via `_G[script] = TS`
-			// access it here via `local TS = _G[script]`
-			return luau.create(luau.SyntaxKind.VariableDeclaration, {
-				left: luau.globals.TS,
-				right: luau.create(luau.SyntaxKind.ComputedIndexExpression, {
-					expression: luau.globals._G,
-					index: luau.globals.script,
+		return luau.create(luau.SyntaxKind.VariableDeclaration, {
+			left: luau.globals.TS,
+			right: luau.create(luau.SyntaxKind.CallExpression, {
+				expression: luau.create(luau.SyntaxKind.Identifier, {
+					name: "require",
 				}),
-			});
-		}
+				args: luau.list.make(luau.string("RuntimeLib")),
+			}),
+		});
+
+		// if the transform state has the game path to the RuntimeLib.lua
+		// if (this.runtimeLibRbxPath) {
+		// 	if (this.projectType === ProjectType.Game) {
+		// 		// create an expression to obtain the service where RuntimeLib is stored
+		// 		// const serviceName = this.runtimeLibRbxPath[0];
+		// 		const serviceName = "ReplicatedStorage";
+		// 		assert(serviceName);
+
+		// 		let expression: luau.IndexableExpression = createGetService(serviceName);
+		// 		// iterate through the rest of the path
+		// 		// for each instance in the path, create a new WaitForChild call to be added on to the end of the final expression
+		// 		for (let i = 1; i < this.runtimeLibRbxPath.length; i++) {
+		// 			expression = luau.create(luau.SyntaxKind.MethodCallExpression, {
+		// 				expression,
+		// 				name: "WaitForChild",
+		// 				args: luau.list.make(luau.string(this.runtimeLibRbxPath[i])),
+		// 			});
+		// 		}
+
+		// 		// nest the chain of `WaitForChild`s inside a require call
+		// 		expression = luau.call(luau.globals.require, [expression]);
+
+		// 		// create a variable declaration for this call
+		// 		return luau.create(luau.SyntaxKind.VariableDeclaration, {
+		// 			left: luau.globals.TS,
+		// 			right: expression,
+		// 		});
+		// 	} else {
+		// 		const sourceOutPath = this.pathTranslator.getOutputPath(sourceFile.fileName);
+		// 		const rbxPath = this.rojoResolver.getRbxPathFromFilePath(sourceOutPath);
+		// 		if (!rbxPath) {
+		// 			DiagnosticService.addDiagnostic(
+		// 				errors.noRojoData(sourceFile, path.relative(this.data.projectPath, sourceOutPath), false),
+		// 			);
+		// 			return luau.create(luau.SyntaxKind.VariableDeclaration, {
+		// 				left: luau.globals.TS,
+		// 				right: luau.none(),
+		// 			});
+		// 		}
+
+		// 		return luau.create(luau.SyntaxKind.VariableDeclaration, {
+		// 			left: luau.globals.TS,
+		// 			right: luau.call(luau.globals.require, [
+		// 				propertyAccessExpressionChain(
+		// 					luau.globals.script,
+		// 					RojoResolver.relative(rbxPath, this.runtimeLibRbxPath).map(v =>
+		// 						v === RbxPathParent ? PARENT_FIELD : v,
+		// 					),
+		// 				),
+		// 			]),
+		// 		});
+		// 	}
+		// } else {
+		// 	// we pass RuntimeLib access to packages via `_G[script] = TS`
+		// 	// access it here via `local TS = _G[script]`
+		// 	return luau.create(luau.SyntaxKind.VariableDeclaration, {
+		// 		left: luau.globals.TS,
+		// 		right: luau.create(luau.SyntaxKind.ComputedIndexExpression, {
+		// 			expression: luau.globals._G,
+		// 			index: luau.globals.script,
+		// 		}),
+		// 	});
+		// }
 	}
 
 	/**

@@ -29,6 +29,25 @@ export function transformMethodDeclaration(
 	}
 
 	let { statements, parameters, hasDotDotDot } = transformParameters(state, node);
+	if (node.name.getText() === "Init") {
+		const parent = node.parent;
+		if (parent.kind === ts.SyntaxKind.ClassDeclaration) {
+			if (parent.name?.text.includes("Service") && !parent.name?.text.match(/Base[A-Z]/)) {
+				luau.list.push(
+					statements,
+					luau.create(luau.SyntaxKind.CallStatement, {
+						expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+							expression: luau.create(luau.SyntaxKind.Identifier, {
+								name: luau.globals.self.name,
+							}),
+							name: "constructor",
+							args: luau.list.make(),
+						}),
+					}),
+				);
+			}
+		}
+	}
 	luau.list.pushList(statements, transformStatementList(state, node.body, node.body.statements));
 
 	let name = transformPropertyName(state, node.name);

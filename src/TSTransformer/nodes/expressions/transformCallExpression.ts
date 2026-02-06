@@ -174,6 +174,32 @@ export function transformPropertyCallExpressionInner(
 		]);
 	}
 
+	if (name === "Pipe") {
+		// map varargs to table array
+		const [ops, prereqs] = state.capture(() => ensureTransformOrder(state, nodeArguments));
+		if (!luau.list.isEmpty(prereqs) && expressionMightMutate(state, baseExpression, expression.expression)) {
+			baseExpression = state.pushToVar(baseExpression);
+		}
+		state.prereqList(prereqs);
+
+		const arrayLiteral = luau.create(luau.SyntaxKind.Array, {
+			members: luau.list.make(...ops),
+		});
+
+		let exp: luau.Expression;
+		if (luau.isValidIdentifier(name)) {
+			exp = luau.create(luau.SyntaxKind.MethodCallExpression, {
+				name,
+				expression: convertToIndexableExpression(baseExpression),
+				args: luau.list.make(arrayLiteral),
+			});
+		} else {
+			exp = luau.call(luau.property(convertToIndexableExpression(baseExpression), name), [arrayLiteral]);
+		}
+
+		return wrapReturnIfLuaTuple(state, node, exp);
+	}
+
 	const expType = state.typeChecker.getNonOptionalType(state.getType(node.expression));
 	const symbol = getFirstDefinedSymbol(state, expType);
 	if (symbol) {
@@ -280,5 +306,31 @@ export function transformElementCallExpressionInner(
 }
 
 export function transformCallExpression(state: TransformState, node: ts.CallExpression) {
+	if (
+		ts.isIdentifier(node.expression) &&
+		node.expression.text === "GetService" &&
+		node.arguments.length === 0 &&
+		node.typeArguments?.length === 1
+	) {
+		const typeArg = node.typeArguments[0];
+		if (ts.isTypeReferenceNode(typeArg) && ts.isIdentifier(typeArg.typeName)) {
+			const serviceName = typeArg.typeName.text;
+
+			return luau.create(luau.SyntaxKind.CallExpression, {
+				expression: luau.create(luau.SyntaxKind.Identifier, {
+					name: "GetService",
+				}),
+				args: luau.list.make(
+					luau.create(luau.SyntaxKind.CallExpression, {
+						expression: luau.create(luau.SyntaxKind.Identifier, {
+							name: "require",
+						}),
+						args: luau.list.make(luau.string(serviceName)),
+					}),
+				),
+			});
+		}
+	}
+
 	return transformOptionalChain(state, node);
 }

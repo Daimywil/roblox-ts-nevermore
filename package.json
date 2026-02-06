@@ -1,6 +1,6 @@
 {
-	"name": "roblox-ts",
-	"version": "3.0.0",
+	"name": "@daimywil/roblox-ts-nevermore",
+	"version": "3.0.3",
 	"description": "A TypeScript-to-Luau Compiler for Roblox",
 	"main": "out/CLI/index.js",
 	"repository": {

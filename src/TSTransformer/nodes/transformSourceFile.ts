@@ -1,5 +1,6 @@
 import luau from "@roblox-ts/luau-ast";
 import { RbxType } from "@roblox-ts/rojo-resolver";
+import path from "path";
 import { COMPILER_VERSION } from "Shared/constants";
 import { assert } from "Shared/util/assert";
 import { TransformState } from "TSTransformer";
@@ -10,6 +11,7 @@ import { isSymbolMutable } from "TSTransformer/util/isSymbolMutable";
 import { isSymbolOfValue } from "TSTransformer/util/isSymbolOfValue";
 import { getAncestor } from "TSTransformer/util/traversal";
 import ts from "typescript";
+import { Expression } from "@roblox-ts/luau-ast/out/LuauAST/bundle";
 
 function getExportPair(state: TransformState, exportSymbol: ts.Symbol): [name: string, id: luau.AnyIdentifier] {
 	const declaration = exportSymbol.getDeclarations()?.[0];
@@ -201,6 +203,11 @@ function getLastNonCommentStatement(listNode?: luau.ListNode<luau.Statement>) {
  * @param node The sourcefile to convert to a Luau AST.
  */
 export function transformSourceFile(state: TransformState, node: ts.SourceFile) {
+	const filePath = node.getSourceFile().fileName;
+	const fileName = path.basename(filePath).split(".")[0];
+	const isServer = filePath.includes("server");
+	console.log(`Transforming ${fileName} (${isServer ? "server" : "client"})`);
+
 	const symbol = state.typeChecker.getSymbolAtLocation(node);
 	assert(symbol);
 	state.setModuleIdBySymbol(symbol, luau.globals.exports);
@@ -222,22 +229,181 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 	const headerStatements = luau.list.make<luau.Statement>();
 
 	// add build information to the tree
-	luau.list.push(headerStatements, luau.comment(` Compiled with roblox-ts v${COMPILER_VERSION}`));
+	luau.list.push(headerStatements, luau.comment(` Compiled with roblox-ts v${COMPILER_VERSION} (nevermore-fork)`));
+
+	let noNevermoreRequireImport = false;
+	if (fileName === "main" || fileName === "main-plugin") {
+		noNevermoreRequireImport = true;
+
+		const isPlugin = fileName === "main-plugin";
+		if (isServer) {
+			const modulesFolder = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+				expression: isPlugin
+					? luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+							name: "Parent",
+							expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+								expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+								name: "Parent",
+							}),
+						})
+					: luau.create(luau.SyntaxKind.MethodCallExpression, {
+							name: "GetService",
+							expression: luau.create(luau.SyntaxKind.Identifier, { name: "game" }),
+							args: luau.list.make(
+								luau.create(luau.SyntaxKind.StringLiteral, { value: "ServerScriptService" }),
+							),
+						}),
+				name: "Modules",
+			});
+
+			const loaderUtilsParent = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+				expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+					expression: modulesFolder,
+					name: "FindFirstChild",
+					args: luau.list.make<Expression>(
+						luau.create(luau.SyntaxKind.StringLiteral, { value: "LoaderUtils" }),
+						luau.create(luau.SyntaxKind.TrueLiteral, {}),
+					),
+				}),
+				name: "Parent",
+			});
+
+			luau.list.push(
+				headerStatements,
+				luau.create(luau.SyntaxKind.VariableDeclaration, {
+					left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+					right: luau.create(luau.SyntaxKind.CallExpression, {
+						expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+							expression: luau.create(luau.SyntaxKind.ParenthesizedExpression, {
+								expression: luau.create(luau.SyntaxKind.CallExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+									args: luau.list.make(loaderUtilsParent),
+								}),
+							}),
+							name: isPlugin ? "bootstrapPlugin" : "bootstrapGame",
+						}),
+						args: luau.list.make(modulesFolder),
+					}),
+				}),
+			);
+		} else {
+			luau.list.pushList(
+				headerStatements,
+				luau.list.make(
+					luau.create(luau.SyntaxKind.VariableDeclaration, {
+						left: luau.create(luau.SyntaxKind.Identifier, { name: "loader" }),
+						right: luau.create(luau.SyntaxKind.MethodCallExpression, {
+							expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+								expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, { name: "game" }),
+									name: "GetService",
+									args: luau.list.make(
+										luau.create(luau.SyntaxKind.StringLiteral, { value: "ReplicatedStorage" }),
+									),
+								}),
+								name: "WaitForChild",
+								args: luau.list.make(luau.create(luau.SyntaxKind.StringLiteral, { value: "Modules" })),
+							}),
+							name: "WaitForChild",
+							args: luau.list.make(luau.create(luau.SyntaxKind.StringLiteral, { value: "loader" })),
+						}),
+					}),
+					luau.create(luau.SyntaxKind.VariableDeclaration, {
+						left: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+						right: luau.create(luau.SyntaxKind.CallExpression, {
+							expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+								expression: luau.create(luau.SyntaxKind.CallExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+									args: luau.list.make(luau.create(luau.SyntaxKind.Identifier, { name: "loader" })),
+								}),
+								name: "bootstrapGame",
+							}),
+							args: luau.list.make(
+								luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.Identifier, { name: "loader" }),
+									name: "Parent",
+								}),
+							),
+						}),
+					}),
+				),
+			);
+		}
+	}
 
 	// add the Runtime library to the tree if it is used
 	if (state.usesRuntimeLib) {
+		if (!noNevermoreRequireImport) {
+			luau.list.push(
+				headerStatements,
+				luau.create(luau.SyntaxKind.VariableDeclaration, {
+					left: luau.create(luau.SyntaxKind.Identifier, {
+						name: "require",
+					}),
+					right: luau.create(luau.SyntaxKind.CallExpression, {
+						expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+							expression: luau.create(luau.SyntaxKind.CallExpression, {
+								expression: luau.create(luau.SyntaxKind.Identifier, {
+									name: "require",
+								}),
+								args: luau.list.make<luau.Expression>(
+									luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+										expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+											expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+											name: "Parent",
+										}),
+										name: "loader",
+									}),
+								),
+							}),
+							name: "load",
+						}),
+						args: luau.list.make<luau.Expression>(
+							luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+						),
+					}),
+				}),
+			);
+		}
+
 		luau.list.push(headerStatements, state.createRuntimeLibImport(node));
 	}
 
-	// extract Luau directive comments like --!strict so we can put them before headerStatements
+	// add the ServiceBag import to the tree
+	// if (state.usesServiceBag) {
+	// 	luau.list.push(
+	//         headerStatements,
+	//         luau.create(luau.SyntaxKind.VariableDeclaration, {
+	//             left: luau.create(luau.SyntaxKind.Identifier, { name: "SERVICE_BAG" }),
+	//             right: luau.create(luau.SyntaxKind.CallExpression, {
+	//                 expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+	//                     expression: luau.create(luau.SyntaxKind.CallExpression, {
+	//                         expression: luau.create(luau.SyntaxKind.Identifier, { name: "require" }),
+	//                         args: luau.list.make(
+	//                             luau.create(luau.SyntaxKind.StringLiteral, { value: "TheServiceBag" }),
+	//                         ),
+	//                     }),
+	//                     name: "Get",
+	//                 }),
+	//                 args: luau.list.make(),
+	//             }),
+	//         }),
+	//     );
+	// }
+
+	// extract Luau directive comments like --!strict so we can put them before headerheaderStatements
 	const directiveComments = luau.list.make<luau.Statement>();
-	while (statements.head && luau.isComment(statements.head.value) && statements.head.value.text.startsWith("!")) {
-		// safety: statements.head is checked in while condition
-		luau.list.push(directiveComments, luau.list.shift(statements)!);
+	while (
+		headerStatements.head &&
+		luau.isComment(headerStatements.head.value) &&
+		headerStatements.head.value.text.startsWith("!")
+	) {
+		// safety: headerStatements.head is checked in while condition
+		luau.list.push(directiveComments, luau.list.shift(headerStatements)!);
 	}
 
+	luau.list.unshiftList(headerStatements, directiveComments);
 	luau.list.unshiftList(statements, headerStatements);
-	luau.list.unshiftList(statements, directiveComments);
 
 	return statements;
 }

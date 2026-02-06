@@ -36,6 +36,47 @@ function countImportExpUses(state: TransformState, importClause: ts.ImportClause
 	return uses;
 }
 
+/**
+ * Checks if the root of a package exports a constant with a specific name using TypeScript's type system.
+ * @param state - The current transform state.
+ * @param moduleSpecifier - The module specifier of the package.
+ * @param constName - The name of the constant to check for.
+ * @returns True if the constant is exported, false otherwise.
+ */
+function packageExportsConstTypeLevel(
+	state: TransformState,
+	moduleSpecifier: ts.StringLiteral,
+	constName: string,
+): boolean {
+	const moduleFile = getSourceFileFromModuleSpecifier(state, moduleSpecifier);
+	if (!moduleFile) {
+		return false;
+	}
+
+	const moduleSymbol = state.typeChecker.getSymbolAtLocation(moduleFile);
+	if (!moduleSymbol) {
+		return false;
+	}
+
+	const exports = state.typeChecker.getExportsOfModule(moduleSymbol);
+	return exports.some(exp => exp.name === constName);
+}
+
+function pushNevermoreRequire(statements: luau.List<luau.Statement>, name: string) {
+	luau.list.push(
+		statements,
+		luau.create(luau.SyntaxKind.VariableDeclaration, {
+			left: luau.id(name),
+			right: luau.create(luau.SyntaxKind.CallExpression, {
+				expression: luau.create(luau.SyntaxKind.Identifier, {
+					name: "require",
+				}),
+				args: luau.list.make(luau.string(name)),
+			}),
+		}),
+	);
+}
+
 export function transformImportDeclaration(state: TransformState, node: ts.ImportDeclaration) {
 	// no emit for type only
 	const importClause = node.importClause;
@@ -47,6 +88,40 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 	const importExp = new Lazy<luau.IndexableExpression>(() =>
 		createImportExpression(state, node.getSourceFile(), node.moduleSpecifier),
 	);
+
+	if (importClause) {
+		// get all string identifier import parts
+		const callMethod = importExp.get();
+		if (callMethod.kind === luau.SyntaxKind.CallExpression) {
+			// read all string args
+			let containsQuenty = luau.list.some(
+				callMethod.args,
+				arg => luau.isStringLiteral(arg) && (arg.value === "@quenty" || arg.value === "@daimywil"),
+			);
+			if (containsQuenty && !packageExportsConstTypeLevel(state, node.moduleSpecifier, "__use_ts_require")) {
+				const namedBindings = importClause.namedBindings;
+				if (namedBindings) {
+					if (ts.isNamespaceImport(namedBindings)) {
+						// a namespace is always a runtime value
+						const name = importClause.name?.text;
+						if (name) pushNevermoreRequire(statements, name);
+					} else {
+						// named elements import logic
+						for (const element of namedBindings.elements) {
+							const symbol = getOriginalSymbolOfNode(state.typeChecker, element.name);
+							// check that import is referenced and has a value at runtime
+							if (
+								state.resolver.isReferencedAliasDeclaration(element) &&
+								(!symbol || isSymbolOfValue(symbol))
+							)
+								pushNevermoreRequire(statements, element.name.text);
+						}
+					}
+				}
+				return statements;
+			}
+		}
+	}
 
 	if (importClause) {
 		// detect if we need to push to a new var or not

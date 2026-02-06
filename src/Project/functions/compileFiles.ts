@@ -90,8 +90,8 @@ export function compileFiles(
 		);
 		if (!runtimeLibRbxPath) {
 			return emitResultFailure("Rojo project contained no data for include folder!");
-		} else if (rojoResolver.getNetworkType(runtimeLibRbxPath) !== NetworkType.Unknown) {
-			return emitResultFailure("Runtime library cannot be in a server-only or client-only container!");
+		// } else if (rojoResolver.getNetworkType(runtimeLibRbxPath) !== NetworkType.Unknown) {
+		// 	return emitResultFailure("Runtime library cannot be in a server-only or client-only container!");
 		} else if (rojoResolver.isIsolated(runtimeLibRbxPath)) {
 			return emitResultFailure("Runtime library cannot be in an isolated container!");
 		}

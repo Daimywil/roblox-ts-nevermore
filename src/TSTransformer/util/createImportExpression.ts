@@ -1,5 +1,5 @@
 import luau from "@roblox-ts/luau-ast";
-import { FileRelation, NetworkType, RbxPath, RbxPathParent, RbxType, RojoResolver } from "@roblox-ts/rojo-resolver";
+import { FileRelation, RbxPath, RbxPathParent, RbxType, RojoResolver } from "@roblox-ts/rojo-resolver";
 import path from "path";
 import { NODE_MODULES, PARENT_FIELD, ProjectType } from "Shared/constants";
 import { errors } from "Shared/diagnostics";
@@ -156,16 +156,16 @@ function getProjectImportParts(
 	}
 
 	if (state.projectType === ProjectType.Game) {
-		if (
-			// in the case of `import("")`, don't do network type check
-			// as the call may be guarded by runtime RunService checks
-			!ts.isImportCall(moduleSpecifier.parent) &&
-			state.rojoResolver.getNetworkType(moduleRbxPath) === NetworkType.Server &&
-			state.rojoResolver.getNetworkType(sourceRbxPath) !== NetworkType.Server
-		) {
-			DiagnosticService.addDiagnostic(errors.noServerImport(moduleSpecifier));
-			return [luau.none()];
-		}
+		// if (
+		// 	// in the case of `import("")`, don't do network type check
+		// 	// as the call may be guarded by runtime RunService checks
+		// 	!ts.isImportCall(moduleSpecifier.parent) &&
+		// 	state.rojoResolver.getNetworkType(moduleRbxPath) === NetworkType.Server &&
+		// 	state.rojoResolver.getNetworkType(sourceRbxPath) !== NetworkType.Server
+		// ) {
+		// 	DiagnosticService.addDiagnostic(errors.noServerImport(moduleSpecifier));
+		// 	return [luau.none()];
+		// }
 
 		const fileRelation = state.rojoResolver.getFileRelation(sourceRbxPath, moduleRbxPath);
 		if (fileRelation === FileRelation.OutToOut || fileRelation === FileRelation.InToOut) {
@@ -181,8 +181,13 @@ function getProjectImportParts(
 	}
 }
 
-export function getImportParts(state: TransformState, sourceFile: ts.SourceFile, moduleSpecifier: ts.Expression) {
-	const moduleFile = getSourceFileFromModuleSpecifier(state, moduleSpecifier);
+export function getImportParts(
+	state: TransformState,
+	sourceFile: ts.SourceFile,
+	moduleSpecifier: ts.Expression,
+	moduleFile?: ts.SourceFile,
+) {
+	moduleFile ??= getSourceFileFromModuleSpecifier(state, moduleSpecifier);
 	if (!moduleFile) {
 		DiagnosticService.addDiagnostic(errors.noModuleSpecifierFile(moduleSpecifier));
 		return [luau.none()];
@@ -214,7 +219,41 @@ export function createImportExpression(
 	sourceFile: ts.SourceFile,
 	moduleSpecifier: ts.Expression,
 ): luau.IndexableExpression {
-	const parts = getImportParts(state, sourceFile, moduleSpecifier);
+	// check if the source file and imported file are in the same directory
+	// if it is, we can use require with script.Parent to import the file without using an absolute path
+	const moduleFile = getSourceFileFromModuleSpecifier(state, moduleSpecifier);
+	if (!moduleFile) {
+		DiagnosticService.addDiagnostic(errors.noModuleSpecifierFile(moduleSpecifier));
+		return luau.none();
+	}
+
+	const parts = getImportParts(state, sourceFile, moduleSpecifier, moduleFile);
+
+	const isInSameDirectory = path.dirname(sourceFile.fileName) === path.dirname(moduleFile.fileName);
+	if (isInSameDirectory) {
+		// import using require(script.Parent["FILE NAME"])
+		return luau.call(luau.globals.require, [
+			propertyAccessExpressionChain(luau.globals.script, [
+				"Parent",
+				(parts[parts.length - 1] as luau.StringLiteral).value,
+			]),
+		]);
+	}
+
 	parts.unshift(luau.globals.script);
+
+	const isClientImport =
+		sourceFile.fileName.toLowerCase().includes("client") ||
+		parts.some(part => part.kind === luau.SyntaxKind.StringLiteral && part.value === "Client");
+	if (isClientImport) {
+		// change first part 'game:GetService("ServerScriptService")' expression to 'game:GetService("ReplicatedStorage")'
+		const firstPart = parts[1];
+		if (firstPart && firstPart.kind === luau.SyntaxKind.MethodCallExpression) {
+			parts.splice(1, 1, createGetService("ReplicatedStorage"));
+		}
+	}
+
+	// parts.splice(0, 1);
+
 	return luau.call(state.TS(moduleSpecifier.parent, "import"), parts);
 }

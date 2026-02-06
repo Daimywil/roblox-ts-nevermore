@@ -63,6 +63,7 @@ export function transformImplicitClassConstructor(
 	// - add super.constructor(self, ...)
 	if (getExtendsNode(node)) {
 		hasDotDotDot = true;
+
 		luau.list.push(
 			statements,
 			luau.create(luau.SyntaxKind.CallStatement, {
@@ -98,7 +99,35 @@ export function transformClassConstructor(
 	// property parameters must come after the first super() call
 	const superIndex = bodyStatements.findIndex(v => ts.isExpressionStatement(v) && ts.isSuperCall(v.expression));
 
-	luau.list.pushList(statements, transformStatementList(state, node.body, bodyStatements.slice(0, superIndex + 1)));
+	const transformedStatements = luau.list.toArray(
+		transformStatementList(state, node.body, bodyStatements.slice(0, superIndex + 1)),
+	);
+
+	// get super call from transformed statements, remove it from the luau.list and then push a statement local self = supercall
+	// luau.list does not have array methods. available methods are on luau.list namespace
+	const superCallIndex = transformedStatements.findIndex(
+		v =>
+			luau.isCallStatement(v) &&
+			luau.isCallExpression(v.expression) &&
+			luau.isPropertyAccessExpression(v.expression.expression) &&
+			luau.isIdentifier(v.expression.expression.expression) &&
+			v.expression.expression.expression.name === "super" &&
+			v.expression.expression.name === "new",
+	);
+	if (superCallIndex !== -1) {
+		const [superCall] = transformedStatements.splice(superCallIndex, 1);
+		if (luau.isCallStatement(superCall) && luau.isCallExpression(superCall.expression)) {
+			luau.list.push(
+				statements,
+				luau.create(luau.SyntaxKind.VariableDeclaration, {
+					left: luau.globals.self,
+					right: luau.call(luau.globals.setmetatable, [superCall.expression, name]),
+				}),
+			);
+		}
+	}
+
+	luau.list.pushList(statements, luau.list.make(...transformedStatements));
 
 	for (const parameter of node.parameters) {
 		if (ts.isParameterPropertyDeclaration(parameter, parameter.parent)) {

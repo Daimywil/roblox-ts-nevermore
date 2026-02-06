@@ -39,7 +39,7 @@ function createBoilerplate(
 	node: ts.ClassLikeDeclaration,
 	className: luau.Identifier | luau.TemporaryIdentifier,
 	isClassExpression: boolean,
-) {
+): luau.List<luau.Statement> {
 	const isAbstract = ts.hasAbstractModifier(node);
 	const statements = luau.list.make<luau.Statement>();
 
@@ -64,7 +64,8 @@ function createBoilerplate(
 
 	// if a class is abstract and it does not extend any class, it can just be a plain table
 	// otherwise we can use the default boilerplate
-	const extendsNode = getExtendsNode(node);
+	let extendsNode = getExtendsNode(node);
+
 	if (isAbstract && !extendsNode) {
 		luau.list.push(
 			statements,
@@ -141,8 +142,35 @@ function createBoilerplate(
 		);
 	}
 
+	// class.ClassName = "className"
+	if (!isClassExpression && !luau.isTemporaryIdentifier(className)) {
+		luau.list.push(
+			statements,
+			luau.create(luau.SyntaxKind.Assignment, {
+				left: luau.property(className, "ClassName"),
+				operator: "=",
+				right: luau.string(className.name),
+			}),
+		);
+	}
+
+	// if class name contains 'Service'
+	// class.ServiceName = "className"
+	if (!isClassExpression && !luau.isTemporaryIdentifier(className) && className.name.includes("Service")) {
+		luau.list.push(
+			statements,
+			luau.create(luau.SyntaxKind.Assignment, {
+				left: luau.property(className, "ServiceName"),
+				operator: "=",
+				right: luau.string(className.name),
+			}),
+		);
+	}
+
+	const isNevermoreService = !isClassExpression && className.name.includes("Service");
+
 	// statements for className.new
-	if (!isAbstract) {
+	if (!isAbstract && !isNevermoreService) {
 		const statementsInner = luau.list.make<luau.Statement>();
 
 		//	local self = setmetatable({}, className);
@@ -154,7 +182,6 @@ function createBoilerplate(
 			}),
 		);
 
-		//	return self:constructor(...) or self;
 		luau.list.push(
 			statementsInner,
 			luau.create(luau.SyntaxKind.ReturnStatement, {
@@ -246,7 +273,10 @@ export function transformClassLikeDeclaration(state: TransformState, node: ts.Cl
 
 	// OOP boilerplate + class functions
 	const statementsInner = luau.list.make<luau.Statement>();
-	luau.list.pushList(statementsInner, createBoilerplate(state, node, internalName, isClassExpression));
+
+	const boilerplateStatements = createBoilerplate(state, node, internalName, isClassExpression);
+
+	luau.list.pushList(statementsInner, boilerplateStatements);
 
 	const constructor = findConstructor(node);
 	if (constructor) {
