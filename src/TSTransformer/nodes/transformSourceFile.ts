@@ -237,6 +237,35 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 
 		const isPlugin = fileName === "main-plugin";
 		if (isServer) {
+			if (isPlugin) {
+				luau.list.push(
+					headerStatements,
+					luau.create(luau.SyntaxKind.CallStatement, {
+						expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+							expression: luau.create(luau.SyntaxKind.MethodCallExpression, {
+								expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+										expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+										name: "Parent",
+									}),
+									name: "Parent",
+								}),
+								name: "FindFirstChild",
+								args: luau.list.make<Expression>(
+									luau.create(luau.SyntaxKind.StringLiteral, { value: "ReplicationTypeUtils" }),
+									luau.create(luau.SyntaxKind.TrueLiteral, {}),
+								),
+							}),
+							name: "SetAttribute",
+							args: luau.list.make<Expression>(
+								luau.create(luau.SyntaxKind.StringLiteral, { value: "IS_PLUGIN" }),
+								luau.create(luau.SyntaxKind.TrueLiteral, {}),
+							),
+						}),
+					}),
+				);
+			}
+
 			const modulesFolder = luau.create(luau.SyntaxKind.PropertyAccessExpression, {
 				expression: isPlugin
 					? luau.create(luau.SyntaxKind.PropertyAccessExpression, {
