@@ -84,6 +84,8 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 
 	const statements = luau.list.make<luau.Statement>();
 
+	let previousUseRuntimeLibValue = state.usesRuntimeLib;
+
 	assert(ts.isStringLiteral(node.moduleSpecifier));
 	const importExp = new Lazy<luau.IndexableExpression>(() =>
 		createImportExpression(state, node.getSourceFile(), node.moduleSpecifier),
@@ -108,6 +110,8 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 					} else {
 						// named elements import logic
 						for (const element of namedBindings.elements) {
+							if (element.getText() === "ServiceLike") continue;
+
 							const symbol = getOriginalSymbolOfNode(state.typeChecker, element.name);
 							// check that import is referenced and has a value at runtime
 							if (
@@ -117,6 +121,11 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 								pushNevermoreRequire(statements, element.name.text);
 						}
 					}
+				}
+				if (!previousUseRuntimeLibValue && state.usesRuntimeLib) {
+					// if we didn't previously use the runtime library but now we do,
+					// we dont need it anymore since we are now using a string require
+					state.usesRuntimeLib = false;
 				}
 				return statements;
 			}

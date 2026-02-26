@@ -229,7 +229,11 @@ export function createImportExpression(
 
 	const parts = getImportParts(state, sourceFile, moduleSpecifier, moduleFile);
 
-	const isInSameDirectory = path.dirname(sourceFile.fileName) === path.dirname(moduleFile.fileName);
+	const actualFileNameWithExtension = path.basename(moduleFile.fileName);
+
+	const isInSameDirectory =
+		actualFileNameWithExtension !== "index.ts" &&
+		path.dirname(sourceFile.fileName) === path.dirname(moduleFile.fileName);
 	if (isInSameDirectory) {
 		// import using require(script.Parent["FILE NAME"])
 		return luau.call(luau.globals.require, [

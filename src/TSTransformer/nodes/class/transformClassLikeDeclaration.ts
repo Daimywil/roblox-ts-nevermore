@@ -142,18 +142,7 @@ function createBoilerplate(
 		);
 	}
 
-	// class.ClassName = "className"
-	if (!isClassExpression && !luau.isTemporaryIdentifier(className)) {
-		luau.list.push(
-			statements,
-			luau.create(luau.SyntaxKind.Assignment, {
-				left: luau.property(className, "ClassName"),
-				operator: "=",
-				right: luau.string(className.name),
-			}),
-		);
-	}
-
+	let hasEmittedServiceName = false;
 	// if class name contains 'Service'
 	// class.ServiceName = "className"
 	if (!isClassExpression && !luau.isTemporaryIdentifier(className) && className.name.includes("Service")) {
@@ -161,6 +150,19 @@ function createBoilerplate(
 			statements,
 			luau.create(luau.SyntaxKind.Assignment, {
 				left: luau.property(className, "ServiceName"),
+				operator: "=",
+				right: luau.string(className.name),
+			}),
+		);
+		hasEmittedServiceName = true;
+	}
+
+	// class.ClassName = "className"
+	if (!hasEmittedServiceName && !isClassExpression && !luau.isTemporaryIdentifier(className)) {
+		luau.list.push(
+			statements,
+			luau.create(luau.SyntaxKind.Assignment, {
+				left: luau.property(className, "ClassName"),
 				operator: "=",
 				right: luau.string(className.name),
 			}),
