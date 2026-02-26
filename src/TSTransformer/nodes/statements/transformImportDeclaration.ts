@@ -4,7 +4,7 @@ import { assert } from "Shared/util/assert";
 import { TransformState } from "TSTransformer";
 import { transformVariable } from "TSTransformer/nodes/statements/transformVariableStatement";
 import { cleanModuleName } from "TSTransformer/util/cleanModuleName";
-import { createImportExpression } from "TSTransformer/util/createImportExpression";
+import { createImportExpression, getImportParts } from "TSTransformer/util/createImportExpression";
 import { getOriginalSymbolOfNode } from "TSTransformer/util/getOriginalSymbolOfNode";
 import { getSourceFileFromModuleSpecifier } from "TSTransformer/util/getSourceFileFromModuleSpecifier";
 import { isSymbolOfValue } from "TSTransformer/util/isSymbolOfValue";
@@ -86,51 +86,40 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 
 	const statements = luau.list.make<luau.Statement>();
 
-	let previousUseRuntimeLibValue = state.usesRuntimeLib;
-
 	assert(ts.isStringLiteral(node.moduleSpecifier));
 	const importExp = new Lazy<luau.IndexableExpression>(() =>
 		createImportExpression(state, node.getSourceFile(), node.moduleSpecifier),
 	);
 
 	if (importClause) {
-		// get all string identifier import parts
-		const callMethod = importExp.get();
-		if (callMethod.kind === luau.SyntaxKind.CallExpression) {
-			// read all string args
-			let containsQuenty = luau.list.some(
-				callMethod.args,
-				arg => luau.isStringLiteral(arg) && (arg.value === "@quenty" || arg.value === "@daimywil"),
-			);
-			if (containsQuenty && !packageExportsConstTypeLevel(state, node.moduleSpecifier, "__use_ts_require")) {
-				const namedBindings = importClause.namedBindings;
-				if (namedBindings) {
-					if (ts.isNamespaceImport(namedBindings)) {
-						// a namespace is always a runtime value
-						const name = importClause.name?.text;
-						if (name) pushNevermoreRequire(state, statements, name);
-					} else {
-						// named elements import logic
-						for (const element of namedBindings.elements) {
-							if (element.getText() === "ServiceLike") continue;
+		const importParts = getImportParts(state, node.getSourceFile(), node.moduleSpecifier);
+		let containsQuenty = importParts.some(
+			part =>
+				part.kind === luau.SyntaxKind.StringLiteral && (part.value === "@quenty" || part.value === "@daimywil"),
+		);
+		if (containsQuenty && !packageExportsConstTypeLevel(state, node.moduleSpecifier, "__use_ts_require")) {
+			const namedBindings = importClause.namedBindings;
+			if (namedBindings) {
+				if (ts.isNamespaceImport(namedBindings)) {
+					// a namespace is always a runtime value
+					const name = importClause.name?.text;
+					if (name) pushNevermoreRequire(state, statements, name);
+				} else {
+					// named elements import logic
+					for (const element of namedBindings.elements) {
+						if (element.getText() === "ServiceLike") continue;
 
-							const symbol = getOriginalSymbolOfNode(state.typeChecker, element.name);
-							// check that import is referenced and has a value at runtime
-							if (
-								state.resolver.isReferencedAliasDeclaration(element) &&
-								(!symbol || isSymbolOfValue(symbol))
-							)
-								pushNevermoreRequire(state, statements, element.name.text);
-						}
+						const symbol = getOriginalSymbolOfNode(state.typeChecker, element.name);
+						// check that import is referenced and has a value at runtime
+						if (
+							state.resolver.isReferencedAliasDeclaration(element) &&
+							(!symbol || isSymbolOfValue(symbol))
+						)
+							pushNevermoreRequire(state, statements, element.name.text);
 					}
 				}
-				if (!previousUseRuntimeLibValue && state.usesRuntimeLib) {
-					// if we didn't previously use the runtime library but now we do,
-					// we dont need it anymore since we are now using a string require
-					state.usesRuntimeLib = false;
-				}
-				return statements;
 			}
+			return statements;
 		}
 	}
 
