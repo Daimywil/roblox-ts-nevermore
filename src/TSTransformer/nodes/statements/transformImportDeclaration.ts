@@ -62,7 +62,9 @@ function packageExportsConstTypeLevel(
 	return exports.some(exp => exp.name === constName);
 }
 
-function pushNevermoreRequire(statements: luau.List<luau.Statement>, name: string) {
+function pushNevermoreRequire(state: TransformState, statements: luau.List<luau.Statement>, name: string) {
+	state.usesStringRequire = true;
+
 	luau.list.push(
 		statements,
 		luau.create(luau.SyntaxKind.VariableDeclaration, {
@@ -106,7 +108,7 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 					if (ts.isNamespaceImport(namedBindings)) {
 						// a namespace is always a runtime value
 						const name = importClause.name?.text;
-						if (name) pushNevermoreRequire(statements, name);
+						if (name) pushNevermoreRequire(state, statements, name);
 					} else {
 						// named elements import logic
 						for (const element of namedBindings.elements) {
@@ -118,7 +120,7 @@ export function transformImportDeclaration(state: TransformState, node: ts.Impor
 								state.resolver.isReferencedAliasDeclaration(element) &&
 								(!symbol || isSymbolOfValue(symbol))
 							)
-								pushNevermoreRequire(statements, element.name.text);
+								pushNevermoreRequire(state, statements, element.name.text);
 						}
 					}
 				}

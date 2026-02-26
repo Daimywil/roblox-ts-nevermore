@@ -183,6 +183,8 @@ export class TransformState {
 		return getOrSetDefault(this.getTypeCache, node, () => this.typeChecker.getTypeAtLocation(skipUpwards(node)));
 	}
 
+	public usesStringRequire = false;
+
 	public usesRuntimeLib = false;
 	public TS(node: ts.Node, name: string) {
 		this.usesRuntimeLib = true;

@@ -360,41 +360,39 @@ export function transformSourceFile(state: TransformState, node: ts.SourceFile) 
 		}
 	}
 
+	if ((state.usesRuntimeLib || state.usesStringRequire) && !noNevermoreRequireImport) {
+		luau.list.push(
+			headerStatements,
+			luau.create(luau.SyntaxKind.VariableDeclaration, {
+				left: luau.create(luau.SyntaxKind.Identifier, {
+					name: "require",
+				}),
+				right: luau.create(luau.SyntaxKind.CallExpression, {
+					expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+						expression: luau.create(luau.SyntaxKind.CallExpression, {
+							expression: luau.create(luau.SyntaxKind.Identifier, {
+								name: "require",
+							}),
+							args: luau.list.make<luau.Expression>(
+								luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+									expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
+										expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
+										name: "Parent",
+									}),
+									name: "loader",
+								}),
+							),
+						}),
+						name: "load",
+					}),
+					args: luau.list.make<luau.Expression>(luau.create(luau.SyntaxKind.Identifier, { name: "script" })),
+				}),
+			}),
+		);
+	}
+
 	// add the Runtime library to the tree if it is used
 	if (state.usesRuntimeLib) {
-		if (!noNevermoreRequireImport) {
-			luau.list.push(
-				headerStatements,
-				luau.create(luau.SyntaxKind.VariableDeclaration, {
-					left: luau.create(luau.SyntaxKind.Identifier, {
-						name: "require",
-					}),
-					right: luau.create(luau.SyntaxKind.CallExpression, {
-						expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
-							expression: luau.create(luau.SyntaxKind.CallExpression, {
-								expression: luau.create(luau.SyntaxKind.Identifier, {
-									name: "require",
-								}),
-								args: luau.list.make<luau.Expression>(
-									luau.create(luau.SyntaxKind.PropertyAccessExpression, {
-										expression: luau.create(luau.SyntaxKind.PropertyAccessExpression, {
-											expression: luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
-											name: "Parent",
-										}),
-										name: "loader",
-									}),
-								),
-							}),
-							name: "load",
-						}),
-						args: luau.list.make<luau.Expression>(
-							luau.create(luau.SyntaxKind.Identifier, { name: "script" }),
-						),
-					}),
-				}),
-			);
-		}
-
 		luau.list.push(headerStatements, state.createRuntimeLibImport(node));
 	}
 
