@@ -185,6 +185,19 @@ export = () => {
 		expect(z).to.equal(123);
 	});
 
+	it("should not save variable changes made inside object binding elements", () => {
+		let notok = { foo: true, bar: false };
+		let ok = {
+			foo: undefined as boolean | undefined,
+			bar: true,
+		};
+		const { foo = (ok = notok).foo, bar } = ok;
+
+		expect(ok.foo).to.equal(true);
+		expect(foo).to.equal(true);
+		expect(bar).to.equal(true);
+	});
+
 	it("should not optimize array destructuring", () => {
 		function a() {
 			return [1, 2, 3];
@@ -272,6 +285,16 @@ export = () => {
 		expect(obj.x).to.equal(1);
 		expect(obj.y).to.equal(2);
 		expect(obj.z).to.equal(3);
+	});
+
+	it("should not save variable changes made inside array binding elements", () => {
+		let notok = [true, false];
+		let ok = [undefined, true];
+		const [foo = (ok = notok)[0], bar] = ok;
+
+		expect(ok[0]).to.equal(true);
+		expect(foo).to.equal(true);
+		expect(bar).to.equal(true);
 	});
 
 	it("should support indexing a return value from a function", () => {
@@ -853,5 +876,56 @@ export = () => {
 		const { b } = a;
 		b(123);
 		expect(x).to.equal(123);
+	});
+
+	it("should support array binding pattern with LuaTuple with spread", () => {
+		function returnsLuaTuple() {
+			return $tuple(1, 2, 3, 4, 5);
+		}
+		const [a, b, c, ...rest] = returnsLuaTuple();
+		expect(a).to.equal(1);
+		expect(b).to.equal(2);
+		expect(c).to.equal(3);
+		expect(rest[0]).to.equal(4);
+		expect(rest[1]).to.equal(5);
+	});
+
+	it("should support array assignment pattern with LuaTuple with spread", () => {
+		function returnsLuaTuple() {
+			return $tuple(1, 2, 3, 4, 5);
+		}
+		let a: number;
+		let b: number;
+		let c: number;
+		let rest: Array<number>;
+		[a, b, c, ...rest] = returnsLuaTuple();
+		expect(a).to.equal(1);
+		expect(b).to.equal(2);
+		expect(c).to.equal(3);
+		expect(rest[0]).to.equal(4);
+		expect(rest[1]).to.equal(5);
+	});
+
+	it("should support array binding pattern with LuaTuple with optional call", () => {
+		function returnsLuaTuple() {
+			return $tuple(1, 2, 3, 4, 5);
+		}
+		const [a, b, c] = returnsLuaTuple?.();
+		expect(a).to.equal(1);
+		expect(b).to.equal(2);
+		expect(c).to.equal(3);
+	});
+
+	it("should support array assignment pattern with LuaTuple with optional call", () => {
+		function returnsLuaTuple() {
+			return $tuple(1, 2, 3, 4, 5);
+		}
+		let a: number;
+		let b: number;
+		let c: number;
+		[a, b, c] = returnsLuaTuple?.();
+		expect(a).to.equal(1);
+		expect(b).to.equal(2);
+		expect(c).to.equal(3);
 	});
 };
