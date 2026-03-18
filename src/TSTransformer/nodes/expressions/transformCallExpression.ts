@@ -316,6 +316,48 @@ export function transformCallExpression(state: TransformState, node: ts.CallExpr
 		if (ts.isTypeReferenceNode(typeArg) && ts.isIdentifier(typeArg.typeName)) {
 			const serviceName = typeArg.typeName.text;
 
+			// Base-prefixed services (e.g. BaseVitalityService) get an interpolated string
+			// that appends "Server" or "Client" based on RunService:IsServer()
+			if (/^Base[A-Z]/.test(serviceName) && !/Client|Server/.test(serviceName)) {
+				const strippedName = serviceName.slice(4);
+
+				const runServiceCall = luau.create(luau.SyntaxKind.MethodCallExpression, {
+					name: "GetService",
+					expression: luau.globals.game,
+					args: luau.list.make(luau.string("RunService")),
+				});
+
+				const isServerCall = luau.create(luau.SyntaxKind.MethodCallExpression, {
+					name: "IsServer",
+					expression: runServiceCall,
+					args: luau.list.make(),
+				});
+
+				const serverOrClientExpr = luau.binary(
+					luau.binary(isServerCall, "and", luau.string("Server")),
+					"or",
+					luau.string("Client"),
+				);
+
+				const parts = luau.list.make<luau.InterpolatedStringPart | luau.Expression>();
+				luau.list.push(parts, luau.create(luau.SyntaxKind.InterpolatedStringPart, { text: strippedName }));
+				luau.list.push(parts, serverOrClientExpr);
+
+				return luau.create(luau.SyntaxKind.CallExpression, {
+					expression: luau.create(luau.SyntaxKind.Identifier, {
+						name: "GetService",
+					}),
+					args: luau.list.make(
+						luau.create(luau.SyntaxKind.CallExpression, {
+							expression: luau.create(luau.SyntaxKind.Identifier, {
+								name: "require",
+							}),
+							args: luau.list.make(luau.create(luau.SyntaxKind.InterpolatedString, { parts })),
+						}),
+					),
+				});
+			}
+
 			return luau.create(luau.SyntaxKind.CallExpression, {
 				expression: luau.create(luau.SyntaxKind.Identifier, {
 					name: "GetService",
