@@ -54,6 +54,11 @@ export = () => {
 		expect([..."Hiya"].every((x, i) => x === array4[i])).to.equal(true);
 	});
 
+	it("should support string.contains", () => {
+		expect("Hello, world".contains("world")).to.equal(true);
+		expect("Hello, world".contains("xyz")).to.equal(false);
+	});
+
 	it("should support string.find", () => {
 		const data = "Hello".find("H", 1, true);
 		if (data[0]) {

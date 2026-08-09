@@ -47,6 +47,9 @@ const STRING_CALLBACKS: MacroList<PropertyCallMacro> = {
 	size: (state, node, expression) => luau.unary("#", expression),
 
 	byte: makeStringCallback(luau.globals.string.byte),
+	contains: (state, node, expression, args) => {
+		return luau.binary(luau.call(luau.globals.string.match, [expression, args[0]]), "~=", luau.nil());
+	},
 	find: makeStringCallback(luau.globals.string.find),
 	format: makeStringCallback(luau.globals.string.format),
 	gmatch: makeStringCallback(luau.globals.string.gmatch),
